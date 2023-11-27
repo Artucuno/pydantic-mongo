@@ -45,11 +45,10 @@ class AbstractRepository(Generic[T]):
         self.__collection_name = self.Meta.collection_name
         self.__validate()
 
-    """
-    Get pymongo collection
-    """
-
     def get_collection(self) -> Collection:
+        """
+        Get pymongo collection
+        """
         return self.__database[self.__collection_name]
 
     def __validate(self):
@@ -104,21 +103,41 @@ class AbstractRepository(Generic[T]):
         """
         return self.to_model_custom(self.__document_class, data)
 
-    def save(self, model: T) -> Union[InsertOneResult, UpdateResult]:
+    def save(self, model: T, no_update=False, **kwargs) -> Union[InsertOneResult, UpdateResult]:
         """
         Save entity to database. It will update the entity if it has id, otherwise it will insert it.
+        :param model: Model to save
+        :param no_update: If True, it will insert the entity even if it has id
+        :param kwargs: kwargs for pymongo insert_one or update_one
+        :return: Union[InsertOneResult, UpdateResult]
         """
         document = self.to_document(model)
-
+        if no_update and model.id:
+            model.id = None
         if model.id:
             mongo_id = document.pop("_id")
             return self.get_collection().update_one(
-                {"_id": mongo_id}, {"$set": document}, upsert=True
+                {"_id": mongo_id}, {"$set": document}, upsert=True, **kwargs
             )
 
-        result = self.get_collection().insert_one(document)
+        result = self.get_collection().insert_one(document, **kwargs)
         model.id = result.inserted_id
         return result
+
+    def update(self, model: T, **kwargs) -> UpdateResult:
+        """
+        Update entity in database. It will update the entity if it has id, otherwise it will raise an exception.
+        :param model: Model to save
+        :param kwargs: kwargs for pymongo update_one
+        :return: Union[UpdateResult]
+        """
+        if not model.id:
+            raise Exception("Model should have an id")
+        document = self.to_document(model)
+        mongo_id = document.pop("_id")
+        return self.get_collection().update_one(
+            {"_id": mongo_id}, {"$set": document}, upsert=True, **kwargs
+        )
 
     def save_many(self, models: Iterable[T]):
         """
